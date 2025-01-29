@@ -73,7 +73,7 @@ class DES ():
     def encrypt ( self , message_file , outfile ):
 
         bv = BitVector(filename=message_file)
-        FILEOUT = open(outfile, 'wb')
+        FILEOUT = open(outfile, 'w')
         while (bv.more_to_read):
             round_ct = 0
             bitvec = bv.read_bits_from_file( 64 )
@@ -82,21 +82,7 @@ class DES ():
                 pad_bits = 64 - read_bits
                 bitvec.pad_from_right(pad_bits)
             [LE, RE] = bitvec.divide_into_two()
-            #new_LE = RE
-            #print("1. First block of plaintext represented as a BitVector")
-            #print("Left Block (hex): " + LE.get_bitvector_in_hex())
-            #print("Right Block (hex): " + RE.get_bitvector_in_hex())
-            #feistel_output = self.feistel(RE, self.round_keys[round_ct])
-            #round_ct += 1
-            #new_RE = LE ^ feistel_output
-            #print("6. First block of plaintext after xor with left block in round 1/16")
-            #print("Right Block (hex): " + new_RE.get_bitvector_in_hex())
 
-            #print("7. first block of plaintext after performing ONE round of the Feistel Structure")
-            #print("Left Block (hex): " + RE.get_bitvector_in_hex())
-            #print("Right Block (hex): " + new_RE.get_bitvector_in_hex())
-            #LE = new_LE
-            #RE = new_RE
             for i in range(16):
                 new_LE = RE
                 feistel_output = self.feistel(RE, self.round_keys[round_ct])
@@ -104,12 +90,10 @@ class DES ():
                 LE = new_LE
                 RE = new_RE
                 round_ct += 1
-            final_output = RE + LE
-            final_output.write_to_file(FILEOUT)
-        #[LE, RE] = next_round.divide_into_two()
-        #final_output = RE + LE
-        #print("8. First block of plaintext after performing ALL rounds of the Feistel Structure")
-        #print("64-bit Block (hex): " + final_output.get_bitvector_in_hex())
+            final_bv = BitVector(size=0)
+            final_bv = RE + LE
+            final_output = final_bv.get_hex_string_from_bitvector()
+            FILEOUT.write(final_output)
         FILEOUT.close()
     # encrypts the contents of the message file and writes
     # the ciphertext to the outfile
@@ -119,11 +103,15 @@ class DES ():
     # Inputs : encrypted_file (str), outfile (str)
     # Return : void
     def decrypt ( self , encrypted_file , outfile ):
-        bv = BitVector(filename = encrypted_file)
-        FILEOUT = open(outfile, 'wb')
-        while(bv.more_to_read):
-            round_ct = 0
-            bitvec = bv.read_bits_from_file( 64 )
+        FILEIN = open(encrypted_file, 'r')
+        for line in FILEIN:
+            bv = BitVector(hexstring = line)
+        num_blocks = len(bv) // 64
+        blocks_decrypted = 0
+        FILEOUT = open(outfile, 'w')
+        while(blocks_decrypted < num_blocks):
+            round_ct = 15
+            bitvec = bv[64*blocks_decrypted:64*(blocks_decrypted + 1)]
             read_bits = bitvec._getsize()
             if read_bits < 64:
                 pad_bits = 64 - read_bits
@@ -135,28 +123,56 @@ class DES ():
                 new_RE = LE ^ feistel_output
                 LE = new_LE
                 RE = new_RE
-                round_ct += 1
+                round_ct -= 1
+            final_bv = BitVector(size=0)
             final_bv = RE + LE
-            final_output = final_bv.get_bitvector_in_hex()
-            final_output.write_to_file(FILEOUT)
+            final_output = final_bv.get_text_from_bitvector()
+            blocks_decrypted += 1
+            FILEOUT.write(final_output)
     # decrypts the contents of the encrypted_file and
     # writes the recovered plaintext to the outfile
+    def image_encrypt(self, image_file, outfile):
+        FILEIN = open(image_file, 'rb')
+        FILEOUT = open(outfile, 'wb')
+        header = []
+        for i,line in enumerate(FILEIN):
+            if i < 3:
+                header.append(line)
+        
+        header_size = len(header[0]) + len(header[1]) + len(header[2])
+        bv = BitVector(filename=image_file)
+        header = bv.read_bits_from_file(header_size * 8)
+        header.write_to_file(FILEOUT)
+        while (bv.more_to_read):
+            round_ct = 0
+            bitvec = bv.read_bits_from_file(64)
+            read_bits = bitvec._getsize()
+            if read_bits < 64:
+                pad_bits = 64 - read_bits
+                bitvec.pad_from_right(pad_bits)
+            [LE, RE] = bitvec.divide_into_two()
 
+            for i in range(16):
+                new_LE = RE
+                feistel_output = self.feistel(RE, self.round_keys[round_ct])
+                new_RE = LE ^ feistel_output
+                LE = new_LE
+                RE = new_RE
+                round_ct += 1
+            final_bv = BitVector(size=0)
+            final_bv = RE + LE
+
+            final_bv.write_to_file(FILEOUT)
+        FILEOUT.close()
+        FILEIN.close()
 
     
+
     def feistel(self, R, key):
         R_EP = R.permute(self.expansion_permutation)
-        #print("2. First block of plaintext after expansion permutation in round 1/16")
-        #print("Right Block (hex): " + R_EP.get_bitvector_in_hex())
         R_roundkey_permute = R_EP ^ key
-        #print("3. First block of plaintext after XOR with round key in round 1/16")
-        #print("Right Block (hex): " +  R_roundkey_permute.get_bitvector_in_hex())
         post_s_boxes = self.substitute(R_roundkey_permute)
-        #print("4. First block of plaintext after substitution with s-box in round 1/16")
-        #print("Right Block (hex): " + post_s_boxes.get_bitvector_in_hex())
         post_p_box = post_s_boxes.permute(self.p_box_permutation)
-        #print("5. First block of plaintext after permutation with p-box in round 1/16")
-        #print("Right Block (hex): " + post_p_box.get_bitvector_in_hex())
         return post_p_box
 
     
@@ -202,7 +218,9 @@ class DES ():
 # drive the encryption / decryption process
 if __name__ == "__main__":
     test = DES(key = "Iluvatar")
-    test.encrypt('message.txt', 'cipher.txt')
-    test.encrypt('cipher.txt', 'out.txt')
+    #test.encrypt('message.txt', 'cipher.txt')
+    #test.decrypt('cipher.txt', 'out.txt')
+    test.image_encrypt('image.ppm', 'image_enc.ppm')
+
 # example of construction of DES object instance
 #cipher = DES ( key= sys . argv [3])
